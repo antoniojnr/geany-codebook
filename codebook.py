@@ -1,5 +1,4 @@
 import geany
-import datetime
 import os
 import hashlib
 import json
@@ -78,51 +77,55 @@ class Codebook(geany.Plugin):
                 diff = list(Differ().compare(self.last_state, cur_changes))
                 event = self.diff_to_event(diff, pos)
                 self.events[self.current_doc].append(event)
-
+                if len(self.events[self.current_doc]) % 5 == 0:
+                    self.save_events()
+                    
             self.last_state = cur_changes
 
         return False
 
     def diff_to_event(self, diff, pos):
         striped = self.get_diff(diff)
-        add = ""
-        rem = ""
+        mod = ""
+
         for char in striped:
-            if char[0] == '+':
-                add += char[2]
-            elif char[0] == '-':
-                rem += char[2]
+            mod += char[2]
+
+        return {
+            "v": mod, 
+            "pos": pos, 
+            "ac": "i" if striped[0][0] == "+" else "r",
+            "ts": datetime.now().isoformat()
+        }
         
-        if add == "":
-            return {
-                "v": rem, 
-                "pos": pos, 
-                "ac": "r"
-            }
-        else:
-            return {
-                "v": add, 
-                "pos": pos, 
-                "ac": "i"
-            }
-            
     def get_diff(self, diff):
         return [s for s in diff if s[0] in ['+', '-', '?']]
 
     def on_open_document(self, sigmanager, doc):
-        print doc.file_name
         self.current_doc = self.get_filename_hash(doc.file_name)
         header_path = self.codebook_path + "/" + self.current_doc + ".header"
+        data_path = self.codebook_path + "/" + self.current_doc + ".data"    
+        
+        if os.path.isfile(data_path):
+            if self.current_doc not in self.events:
+                self.events[self.current_doc] = []
             
+            with open(data_path) as data_file:
+                json_data = json.loads(data_file.read())
+                self.events[self.current_doc] += json_data
+        
         if not os.path.isfile(header_path):
             with open(header_path, "w") as header_file:
                 json.dump(self.get_header(doc.file_name), header_file)
+    
+    def save_events(self):
+        for k, v in self.events.iteritems():
+			path = self.codebook_path + "/" + k + ".data"
+			with open(path, "w") as f:
+				json.dump(v, f)
                 
     def on_close_document(self, sigmanager, doc):
-        for k, v in self.events.iteritems():
-            path = self.codebook_path + "/" + k + ".data"
-            with open(path, "w") as f:
-                json.dump(v, f)
+        self.save_events()
 
     def cleanup(self):
         print("Plugin cleaning up")
